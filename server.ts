@@ -6,6 +6,7 @@ import {randomUUID} from 'node:crypto';
 import {database,repository,org} from './db.ts';
 import {service} from './domain.ts';
 import {seed} from './seed.ts';
+import {decodeLabelImageDataUrl} from './label-image.ts';
 const root=dirname(fileURLToPath(import.meta.url));mkdirSync(resolve(root,'data'),{recursive:true});
 const db=database(resolve(root,'data/maple.sqlite'));const r=repository(db),s=service(r);seed(r,s);
 for(let n=1;n<=10;n++){const path=resolve(root,`public/labels/label${n}.svg`);if(!existsSync(path))writeFileSync(path,`<svg xmlns="http://www.w3.org/2000/svg" width="680" height="360"><rect width="680" height="360" fill="#faf9f4"/><g fill="#172b29" font-family="monospace"><text x="32" y="48" font-size="18">SYNTHETIC LABEL • OUTSIDE ONLY</text><text x="32" y="115" font-size="32">${n===1?'Maria Garcia':n<=5?'[UNREADABLE RECIPIENT]':r.list('customer')[n-1].name}</text><text x="32" y="165" font-size="22">${n<=5?'MAILBOX: ?':'MAILBOX: '+(100+n)}</text><text x="32" y="222" font-size="22">9400 1000 0000 ${999+n}</text><text x="32" y="300" font-size="16">DEMO · NOT A REAL SHIPMENT</text></g></svg>`)}
@@ -17,7 +18,21 @@ createServer(async(req,res)=>{try{if(!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(r
  switch(u.pathname){case '/api/match':return json(res,s.candidates(p));case '/api/intake':return json(res,s.intake(p));case '/api/change':return json(res,s.change(p.id,p));case '/api/pickup':return json(res,s.pickup(p.id,p));case '/api/send':return json(res,s.send(p.id));
  case '/api/customer':return json(res,s.saveCustomer(p));
  case '/api/authorization':{if(!r.get('customer',p.customerId)||!p.name?.trim()||!p.reason?.trim()||!p.expiresAt||!Number.isFinite(Date.parse(p.expiresAt))||Date.parse(p.expiresAt)<=Date.now())throw Error('Customer, third-party name, verification evidence and future expiry required');const a=r.put('authorization',{id:randomUUID(),customerId:p.customerId,name:p.name,reason:p.reason,expiresAt:new Date(p.expiresAt).toISOString(),staff:'Alex Rivera'});r.event('','pickup authorization created',a);return json(res,a)}
- case '/api/upload':{if(!/^data:image\/(png|jpeg|webp);base64,/.test(p.data))throw Error('Use PNG, JPEG or WebP');const raw=Buffer.from(p.data.split(',')[1],'base64');if(raw.length>2000000)throw Error('Image exceeds 2 MB');const id=randomUUID(),ext=p.data.match(/^data:image\/(\w+)/)[1];writeFileSync(resolve(root,`data/${id}.${ext}`),raw);const label=r.put('label',{id,url:`/image/${id}`,file:`${id}.${ext}`,createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+r.get('settings','retention').days*86400000).toISOString()});r.put('ocr',{id:randomUUID(),labelId:id,status:'unavailable',suggestions:{},raw:'',provider:'No OCR adapter configured; use manual entry'});return json(res,label)}
+ case '/api/upload':{
+  const image=decodeLabelImageDataUrl(p.data);
+  const id=randomUUID(),filename=`${id}.${image.extension}`,filepath=resolve(root,'data',filename);
+  writeFileSync(filepath,image.bytes,{flag:'wx',mode:0o600});
+  try {
+   const label=r.transaction(()=>{
+    const createdAt=new Date().toISOString();
+    const record=r.put('label',{id,url:`/image/${id}`,file:filename,mediaType:image.mime,width:image.width,height:image.height,createdAt,expiresAt:new Date(Date.now()+r.get('settings','retention').days*86400000).toISOString()});
+    r.put('ocr',{id:randomUUID(),labelId:id,status:'unavailable',suggestions:{},raw:'',provider:'No OCR adapter configured; use manual entry'});
+    r.event('','label uploaded',{labelId:id,mime:image.mime,bytes:image.bytes.length,width:image.width,height:image.height});
+    return record;
+   });
+   return json(res,label);
+  }catch(error){if(existsSync(filepath))unlinkSync(filepath);throw error}
+ }
  case '/api/purge':{let count=0;for(const l of r.list('label'))if(l.expiresAt<new Date().toISOString()&&!l.deletedAt){if(l.file&&existsSync(resolve(root,'data',l.file)))unlinkSync(resolve(root,'data',l.file));l.deletedAt=new Date().toISOString();r.put('label',l);r.event('','label deleted',{labelId:l.id});count++}return json(res,{count})}
  case '/api/retention':{if(!Number.isInteger(p.days)||p.days<1||p.days>90)throw Error('Retention must be 1–90 days');r.put('settings',{id:'retention',days:p.days});r.event('','retention changed',{days:p.days});return json(res,{ok:true})}
  case '/api/reset':{if(p.confirm!=='RESET DEMO')throw Error('Type RESET DEMO');r.transaction(()=>{for(const l of r.list('label'))if(l.file&&existsSync(resolve(root,'data',l.file))){unlinkSync(resolve(root,'data',l.file));r.event('','label deleted during demo reset',{labelId:l.id})}db.prepare('DELETE FROM records WHERE org=?').run(org);r.event('','demo reset',{reason:'Operator requested reset; prior audit remains'});seed(r,s)});return json(res,{ok:true})}
