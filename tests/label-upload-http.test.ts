@@ -42,7 +42,7 @@ test('HTTP label upload rejects misleading bytes and stores a validated-format d
     let ready=false;
     for(let i=0;i<75;i++){
       if(child.exitCode!==null)throw Error('Server exited: '+log);
-      try{const response=await get('/api/state');if(response.ok){ready=true;break}}catch{}
+      try{const response=await get('/api/state');if(response.status===401){ready=true;break}}catch{}
       await sleep(80);
     }
     if(!ready)throw Error('Server not ready: '+log);
