@@ -29,8 +29,9 @@ test('named staff sessions protect API, enforce roles and attribute custody hist
  type Session={cookie:string;csrf:string;staff:{name:string;role:string}};
  async function signIn(login:string,password:string):Promise<Session>{
   const response=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json',Origin:base},body:JSON.stringify({login,password})});
-  assert.equal(response.status,200,await response.text().catch(()=>''));
-  const body=await response.json(),cookie=response.headers.get('set-cookie')?.split(';')[0];
+  const body=await response.json();
+  assert.equal(response.status,200,JSON.stringify(body));
+  const cookie=response.headers.get('set-cookie')?.split(';')[0];
   assert.ok(cookie?.startsWith('mm_session='));
   assert.match(response.headers.get('set-cookie')||'',/HttpOnly; SameSite=Strict/);
   return {cookie,csrf:body.csrf,staff:body.staff};
