@@ -3,7 +3,8 @@ import type {IncomingMessage} from 'node:http';
 import type {StaffActor, StaffRole} from './actor.ts';
 
 export class AccessError extends Error {
-  constructor(message:string, public status:number){super(message)}
+  status:number;
+  constructor(message:string,status:number){super(message);this.status=status}
 }
 type Account = StaffActor & {login:string;salt:Buffer;hash:Buffer};
 type Session = {actor:StaffActor;csrf:string;expires:number};
