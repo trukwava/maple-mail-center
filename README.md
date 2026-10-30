@@ -21,7 +21,7 @@ For repeatable local demo accounts without creating paid credentials, optionally
 3. Duplicate tracking shows existing inventory context. Open the existing record, or record a legitimate reuse reason before creating another.
 4. Open an item to move storage, correct recipient with reason, or mark returned/exception. Recipient correction preserves events and supersedes unsent drafts. Inspect notifications independently.
 5. Notification simulation either reports simulated or a deterministic failure. Replay returns the same attempt and key; it does not pretend to retry live delivery. c7 triggers the failure fixture. No SMS or email is sent.
-6. For pickup check photo ID according to the configured demo staff check, then confirm collection. For third parties, first create a separate authorization in Customers, then select it at collection. The app records the staff's assertion; it does not verify identity itself.
+6. For pickup check photo ID according to the configured demo staff check, then confirm collection. For third parties, first create a separate authorization in Customers, then select it at collection. A manager can revoke an authorization from Customers using a recorded reason; revoked or expired authorizations cannot release a package, and inactive recipient mailboxes block delegate pickup. The app records the staff's assertion; it does not verify identity itself.
 7. Inventory searches names, mailbox and tracking. Filter status, inspect age and export CSV. Export includes current intake/pickup rows; item detail shows the full immutable event history.
 8. Customers supports names shared by multiple people, aliases, language, contact and active status. Demo & retention configures image expiry and resets synthetic records.
 
