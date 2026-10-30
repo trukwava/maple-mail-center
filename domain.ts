@@ -43,9 +43,22 @@ export function service(r:any){
  if(p.state){const valid:any={received:['available','exception','returned'],available:['collected','returned','exception'],exception:['available','returned']};if(!valid[i.state]?.includes(p.state)||p.state==='collected')fail('Invalid transition; use pickup workflow');if(p.state==='available'&&!i.customerId)fail('Confirm a recipient first');i.state=p.state}
  if(i.state!=='available'){const withdrawn=supersedeDrafts(id);if(withdrawn)r.event(id,'notification drafts withdrawn',{reason:p.reason,count:withdrawn})}
  r.put('item',i);r.event(id,'correction',{before,after:i,reason:p.reason});return i});
+ const revokeAuthorization=(id:string,reason:string)=>r.transaction(()=>{
+  const authorization=r.get('authorization',id);
+  if(!authorization)fail('Authorization not found');
+  required(reason,'Revocation reason');
+  if(authorization.revoked)fail('Authorization already revoked');
+  authorization.revoked=true;
+  authorization.revokedAt=new Date().toISOString();
+  authorization.revocationReason=reason.trim();
+  authorization.revokedBy=currentActor().name;
+  r.put('authorization',authorization);
+  r.event('','pickup authorization revoked',{authorizationId:id,customerId:authorization.customerId,reason:authorization.revocationReason});
+  return authorization;
+ });
  const pickup=(id:string,p:any)=>r.transaction(()=>{const i=r.get('item',id)||fail('Item not found');if(i.state!=='available')fail('Item is no longer available');required(p.check,'Staff identity check');if(p.check!=='Photo ID checked')fail('Configured check requires Photo ID checked');
- if(p.thirdParty){const a=r.get('authorization',p.authorizationId);if(!a||a.customerId!==i.customerId||a.revoked||a.expiresAt<new Date().toISOString())fail('Valid separate pickup authorization required');}
+ if(p.thirdParty){const a=r.get('authorization',p.authorizationId);if(!a||a.customerId!==i.customerId||a.revoked||!Number.isFinite(Date.parse(a.expiresAt))||Date.parse(a.expiresAt)<=Date.now())fail('Valid separate pickup authorization required');const recipient=r.get('customer',i.customerId);if(!recipient?.active)fail('Recipient mailbox is inactive');}
  i.state='collected';i.collectedAt=new Date().toISOString();const withdrawn=supersedeDrafts(id);if(withdrawn)r.event(id,'notification drafts withdrawn',{reason:'Item collected',count:withdrawn});r.put('item',i);r.event(id,'collected',{check:p.check,authorizationId:p.thirdParty?p.authorizationId:null});return i});
  const send=(id:string)=>r.transaction(()=>{const d=r.get('draft',id)||fail('Draft not found');if(d.status==='superseded')fail('Draft superseded');const old=r.get('attempt',id);if(old)return old;const c=r.get('customer',d.customerId),item=r.get('item',d.itemId);if(!c?.active||!item||item.state!=='available'||item.customerId!==c.id)fail('Draft no longer eligible: review customer and custody state');if(d.status!=='queued')fail('Draft must be queued before an attempt');const status=c.id==='c7'?'failed':'simulated';const a=r.put('attempt',{id, idempotencyKey:`maple-demo:${id}`,draftId:id,status,at:new Date().toISOString(),detail:status==='failed'?'Deterministic demo adapter failure':'Demo simulation only; no external message sent'});d.status=status;r.put('draft',d);r.event(d.itemId,'notification attempt',a);return a});
- return {candidates,intake,change,pickup,send,draft,saveCustomer};
+ return {candidates,intake,change,pickup,send,draft,saveCustomer,revokeAuthorization};
 }
