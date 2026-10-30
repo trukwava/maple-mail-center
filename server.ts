@@ -43,6 +43,7 @@ createServer(async(req,res)=>{try{if(!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(r
  if(req.method==='POST'&&u.pathname.startsWith('/api/')){if(req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`)throw Error('Cross-origin write rejected');let body='';for await(const chunk of req){body+=chunk;if(body.length>3000000)throw Error('Upload too large (2 MB maximum)')}const p=JSON.parse(body||'{}');
  switch(u.pathname){case '/api/match':return json(res,s.candidates(p));case '/api/intake':return json(res,s.intake(p));case '/api/change':return json(res,s.change(p.id,p));case '/api/pickup':return json(res,s.pickup(p.id,p));case '/api/send':return json(res,s.send(p.id));
  case '/api/customer':return json(res,s.saveCustomer(p));
+ case '/api/revoke':return json(res,s.revokeAuthorization(p.id,p.reason));
  case '/api/authorization':{if(!r.get('customer',p.customerId)||!p.name?.trim()||!p.reason?.trim()||!p.expiresAt||!Number.isFinite(Date.parse(p.expiresAt))||Date.parse(p.expiresAt)<=Date.now())throw Error('Customer, third-party name, verification evidence and future expiry required');const a=r.put('authorization',{id:randomUUID(),customerId:p.customerId,name:p.name,reason:p.reason,expiresAt:new Date(p.expiresAt).toISOString(),staff:currentActor().name});r.event('','pickup authorization created',a);return json(res,a)}
  case '/api/upload':{
   const image=decodeLabelImageDataUrl(p.data);
