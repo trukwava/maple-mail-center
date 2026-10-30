@@ -1,5 +1,5 @@
 # Maple Mail Center
-A working local intake-to-pickup application for a fictional bilingual service center. Original implementation; synthetic data only. TypeScript on Node 24 with built-in SQLite and a small responsive browser UI. No package installation, paid API, build service or credentials required.
+A working local intake-to-pickup application for a fictional bilingual service center. Synthetic data only. TypeScript on Node 24 with built-in SQLite and a small responsive browser UI. No package installation, paid API, build service or credentials required.
 
 ## Run
 Install Node.js 24 or later, open this directory, then:
@@ -45,5 +45,3 @@ Fixture label1 says Maria Garcia without a mailbox; two candidates must remain u
 Discovery: (1) Who can confirm recipients and change records? (2) Which mailbox/alias evidence is reliable? (3) What documents authorize delegate pickup? (4) Which contact languages, templates and consent policies are approved? (5) What retention and exception escalation policy is required?
 Baseline: time 20 sanitized manual intakes and 20 searches with current practice; record median/p90, corrections, duplicates and interruptions. Shadow trial: use 100 representative sanitized outside labels beside the existing process, with all drafts unsent and staff comparing every recipient. Record time from label capture to stored intake, corrected matches, duplicate detection recall and search-to-item time. Proposed success gates (hypotheses): zero wrong-recipient drafts, all seeded duplicates caught, every pickup attributable, median intake and search time improved by 20% without increased correction rate. Stop and investigate any wrong-recipient notification, double collection, lost history or sensitive leakage. Do not automate delivery until staff sign off the shadow results. Decide next scope from observed bottlenecks: OCR if typing dominates; messaging adapter if outreach dominates. Buyer, price, demand and savings remain hypotheses.
 
-## Reference
-Inspired by the problem statement for [Mei Way Mail Plus Tracker](https://lookbook.pursuit.org/projects/mei-way-mail-plus-tracker) in the Pursuit Lookbook. The source page could not be retrieved during implementation; no performance or adoption claims were used. No source code, brand assets, private records or customer relationships were reused.
