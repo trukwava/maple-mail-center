@@ -70,6 +70,16 @@ test('named staff sessions protect API, enforce roles and attribute custody hist
   assert.equal((await post(clerk,'change',{id:'i6',reason:'Unauthorized correction'})).status,403);
   assert.equal((await post(clerk,'reset',{confirm:'RESET DEMO'})).status,403);
   assert.equal((await post(manager,'customer',{...state.customers[0],language:'en'})).status,200);
+  const created=await post(manager,'authorization',{customerId:'c1',name:'Temporary delegate',reason:'Consent confirmed',expiresAt:new Date(Date.now()+3600000).toISOString()});
+  assert.equal(created.status,200);
+  const authorization=await created.json();
+  assert.equal((await post(clerk,'revoke',{id:authorization.id,reason:'Customer rescinded access'})).status,403);
+  assert.equal((await post(auditor,'revoke',{id:authorization.id,reason:'Customer rescinded access'})).status,403);
+  assert.equal((await post(manager,'revoke',{id:authorization.id,reason:''})).status,400);
+  const revoked=await post(manager,'revoke',{id:authorization.id,reason:'Customer rescinded access'});
+  assert.equal(revoked.status,200);
+  assert.equal((await revoked.json()).revoked,true);
+  assert.equal((await post(manager,'revoke',{id:authorization.id,reason:'Again'})).status,400);
   const intake=await post(clerk,'intake',{tracking:'RBAC-TEST-001',carrier:'USPS',type:'package',location:'l1',customerId:'c1',name:'Maria Garcia',confirmed:true,evidence:'Clerk compared mailbox and customer record'});
   assert.equal(intake.status,200);
   const item=await intake.json();

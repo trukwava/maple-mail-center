@@ -12,7 +12,7 @@ const HOURS_8 = 8*60*60*1000;
 const actionRoles:Record<string,StaffRole[]> = {
   match:['clerk','manager'], intake:['clerk','manager'], pickup:['clerk','manager'],
   upload:['clerk','manager'], send:['clerk','manager'],
-  change:['manager'], customer:['manager'], authorization:['manager'],
+  change:['manager'], customer:['manager'], authorization:['manager'], revoke:['manager'],
   purge:['manager'], retention:['manager'], reset:['manager'], logout:['clerk','manager','auditor']
 };
 function digest(text:string){return createHash('sha256').update(text).digest('hex')}
