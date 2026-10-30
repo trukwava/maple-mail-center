@@ -26,12 +26,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PORT=4317 npm start >/tmp/maple-server.log 2>&1 &
+          MAPLE_MANAGER_PASSWORD=ci-manager-smoke-only PORT=4317 npm start >/tmp/maple-server.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           ready=0
           for attempt in $(seq 1 30); do
-            if curl --silent --fail http://127.0.0.1:4317/api/state > /tmp/maple-state.json; then
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4317/api/state)" = "401" ]; then
               ready=1
               break
             fi
@@ -42,6 +42,13 @@ jobs:
             exit 1
           fi
           curl --silent --show-error --fail http://127.0.0.1:4317/ >/tmp/maple-home.html
+          curl --silent --show-error --fail -c /tmp/maple-cookie.jar \
+            -H 'Content-Type: application/json' \
+            -H 'Origin: http://127.0.0.1:4317' \
+            -d '{"login":"morgan","password":"ci-manager-smoke-only"}' \
+            http://127.0.0.1:4317/api/login >/tmp/maple-session.json
+          curl --silent --show-error --fail -b /tmp/maple-cookie.jar \
+            http://127.0.0.1:4317/api/state >/tmp/maple-state.json
           node --input-type=module -e '
             import fs from "node:fs";
             import assert from "node:assert/strict";
