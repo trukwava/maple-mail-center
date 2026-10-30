@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {currentActor} from './actor.ts';
 export const normalize=(s:any)=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
 export function service(r:any){
  const fail=(s:string)=>{throw Error(s)};
@@ -34,10 +35,10 @@ export function service(r:any){
  let customer=null;if(!p.review){customer=r.get('customer',p.customerId);if(!customer?.active)fail('Choose an active customer');if(p.confirmed!==true)fail('Explicit recipient confirmation is required');required(p.evidence,'Recipient verification evidence');}
  const item=r.put('item',{id:randomUUID(),tracking:p.tracking.trim(),carrier:required(p.carrier,'Carrier'),type:p.type,location:p.location,condition:String(p.condition||''),customerId:customer?.id||null,state:p.review?'exception':'available',arrivedAt:new Date().toISOString(),labelId:p.labelId||null,source:{name:p.name||'',mailbox:p.mailbox||''},duplicateReason:p.duplicateReason||null});
  r.event(item.id,'received',{source:item.source,duplicateReason:item.duplicateReason});r.put('match',{id:randomUUID(),itemId:item.id,candidates:candidates(p)});
- if(customer){r.put('confirmation',{id:randomUUID(),itemId:item.id,customerId:customer.id,evidence:p.evidence,staff:'Alex Rivera',at:new Date().toISOString()});r.event(item.id,'recipient confirmed',{customerId:customer.id,evidence:p.evidence});draft(item)}else r.event(item.id,'exception',{reason:'Recipient needs review'});return item;
+ if(customer){r.put('confirmation',{id:randomUUID(),itemId:item.id,customerId:customer.id,evidence:p.evidence,staff:currentActor().name,at:new Date().toISOString()});r.event(item.id,'recipient confirmed',{customerId:customer.id,evidence:p.evidence});draft(item)}else r.event(item.id,'exception',{reason:'Recipient needs review'});return item;
  });
  const change=(id:string,p:any)=>r.transaction(()=>{const i=r.get('item',id)||fail('Item not found');required(p.reason,'Reason');if(['collected','returned'].includes(i.state))fail('Terminal item cannot change');const before={...i};
- if(p.customerId){const c=r.get('customer',p.customerId);if(!c?.active||p.confirmed!==true)fail('Active recipient and explicit confirmation required');i.customerId=c.id;supersedeDrafts(id);r.put('confirmation',{id:randomUUID(),itemId:id,customerId:c.id,evidence:p.reason,staff:'Alex Rivera'});i.state='available';draft(i)}
+ if(p.customerId){const c=r.get('customer',p.customerId);if(!c?.active||p.confirmed!==true)fail('Active recipient and explicit confirmation required');i.customerId=c.id;supersedeDrafts(id);r.put('confirmation',{id:randomUUID(),itemId:id,customerId:c.id,evidence:p.reason,staff:currentActor().name});i.state='available';draft(i)}
  if(p.location){if(!r.get('location',p.location))fail('Unknown location');i.location=p.location}
  if(p.state){const valid:any={received:['available','exception','returned'],available:['collected','returned','exception'],exception:['available','returned']};if(!valid[i.state]?.includes(p.state)||p.state==='collected')fail('Invalid transition; use pickup workflow');if(p.state==='available'&&!i.customerId)fail('Confirm a recipient first');i.state=p.state}
  if(i.state!=='available'){const withdrawn=supersedeDrafts(id);if(withdrawn)r.event(id,'notification drafts withdrawn',{reason:p.reason,count:withdrawn})}
