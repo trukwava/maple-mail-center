@@ -1,0 +1,55 @@
+name: Verify Maple Mail Center
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Run regression tests
+        run: npm test
+      - name: Smoke-test HTTP server
+        shell: bash
+        run: |
+          set -euo pipefail
+          PORT=4317 npm start >/tmp/maple-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:4317/api/state > /tmp/maple-state.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then
+            cat /tmp/maple-server.log
+            exit 1
+          fi
+          curl --silent --show-error --fail http://127.0.0.1:4317/ >/tmp/maple-home.html
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import assert from "node:assert/strict";
+            const state = JSON.parse(fs.readFileSync("/tmp/maple-state.json", "utf8"));
+            const home = fs.readFileSync("/tmp/maple-home.html", "utf8");
+            assert.equal(state.org, "maple-demo");
+            assert.equal(state.customers.length, 30);
+            assert.equal(state.items.length, 50);
+            assert.equal(state.locations.length, 6);
+            assert.match(home, /Maple Mail Center/i);
+          '
