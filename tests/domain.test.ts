@@ -73,3 +73,24 @@ test('stale or mismatched notification drafts cannot produce delivery attempts',
  assert.throws(()=>s.send('forged-stale-draft'),/no longer eligible/);
  assert.equal(r.get('attempt','forged-stale-draft'),null);
 });
+
+test('revoked, expired and inactive third-party authorization cannot release a package',()=>{
+ const {s,r}=setup();
+ const item=s.intake({...input,tracking:'DELEGATE-REVOCATION-1'});
+ const valid={id:'delegate-1',customerId:'c1',name:'Authorized delegate',expiresAt:new Date(Date.now()+86400000).toISOString()};
+ r.put('authorization',valid);
+ assert.throws(()=>s.revokeAuthorization('missing','Staff verified revocation'),/not found/);
+ assert.throws(()=>s.revokeAuthorization(valid.id,''),/reason/);
+ const revoked=s.revokeAuthorization(valid.id,'Customer withdrew permission');
+ assert.equal(revoked.revoked,true);
+ assert.equal(r.get('authorization',valid.id).revocationReason,'Customer withdrew permission');
+ assert.ok(r.history('').some((e:any)=>e.kind==='pickup authorization revoked'&&JSON.parse(e.data).authorizationId===valid.id));
+ assert.throws(()=>s.revokeAuthorization(valid.id,'Again'),/already revoked/);
+ assert.throws(()=>s.pickup(item.id,{check:'Photo ID checked',thirdParty:true,authorizationId:valid.id}),/authorization/);
+ r.put('authorization',{...valid,id:'expired',expiresAt:new Date(Date.now()-1000).toISOString()});
+ assert.throws(()=>s.pickup(item.id,{check:'Photo ID checked',thirdParty:true,authorizationId:'expired'}),/authorization/);
+ r.put('authorization',{...valid,id:'still-active'});
+ s.saveCustomer({...r.get('customer','c1'),active:false});
+ assert.throws(()=>s.pickup(item.id,{check:'Photo ID checked',thirdParty:true,authorizationId:'still-active'}),/inactive/);
+ assert.equal(r.get('item',item.id).state,'available');
+});
