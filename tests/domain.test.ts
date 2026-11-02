@@ -94,3 +94,27 @@ test('revoked, expired and inactive third-party authorization cannot release a p
  assert.throws(()=>s.pickup(item.id,{check:'Photo ID checked',thirdParty:true,authorizationId:'still-active'}),/inactive/);
  assert.equal(r.get('item',item.id).state,'available');
 });
+
+test('an exception cannot return to available without a fresh recipient confirmation',()=>{
+ const {s,r}=setup();
+ const item=s.intake({...input,tracking:'RELEASE-1'});
+ s.change(item.id,{state:'exception',reason:'Label and record require review'});
+ const oldDrafts=r.list('draft').filter((d:any)=>d.itemId===item.id);
+ assert.equal(oldDrafts.find((d:any)=>d.status==='queued'),undefined);
+ assert.throws(()=>s.change(item.id,{state:'available',reason:'Verified customer record'}),/reconfirmation/);
+ assert.equal(r.get('item',item.id).state,'exception');
+ const updated=s.change(item.id,{state:'available',reason:'Compared photo ID and mailbox 101',confirmed:true});
+ assert.equal(updated.state,'available');
+ assert.equal(r.list('draft').filter((d:any)=>d.itemId===item.id&&d.status==='queued').length,1);
+ assert.ok(r.history(item.id).some((e:any)=>e.kind==='exception resolved'));
+ assert.ok(r.list('confirmation').some((c:any)=>c.itemId===item.id&&c.evidence==='Compared photo ID and mailbox 101'));
+});
+test('inactive recipient cannot be released from exception',()=>{
+ const {s,r}=setup();
+ const item=s.intake({...input,tracking:'RELEASE-INACTIVE-1'});
+ s.change(item.id,{state:'exception',reason:'Identity hold'});
+ s.saveCustomer({...r.get('customer','c1'),active:false});
+ assert.throws(()=>s.change(item.id,{state:'available',reason:'Attempted premature release',confirmed:true}),/active recipient/);
+ assert.equal(r.get('item',item.id).state,'exception');
+ assert.equal(r.list('draft').filter((d:any)=>d.itemId===item.id&&d.status==='queued').length,0);
+});
