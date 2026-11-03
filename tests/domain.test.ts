@@ -118,3 +118,73 @@ test('inactive recipient cannot be released from exception',()=>{
  assert.equal(r.get('item',item.id).state,'exception');
  assert.equal(r.list('draft').filter((d:any)=>d.itemId===item.id&&d.status==='queued').length,0);
 });
+
+test('recipient correction after a simulated attempt creates a quarantined, auditable incident',()=>{
+ const {s,r}=setup();
+ const item=s.intake({...input,tracking:'INCIDENT-SIM-01'});
+ const oldDraft=r.list('draft').find((d:any)=>d.itemId===item.id);
+ const attempt=s.send(oldDraft.id);
+ assert.equal(attempt.status,'simulated');
+ const corrected=s.change(item.id,{customerId:'c3',confirmed:true,reason:'Verified mailbox 103 not 101'});
+ assert.equal(corrected.state,'exception');
+ assert.equal(corrected.customerId,'c3');
+ const incidents=r.list('incident').filter((i:any)=>i.itemId===item.id);
+ assert.equal(incidents.length,1);
+ const incident=incidents[0];
+ assert.equal(incident.status,'open');
+ assert.equal(incident.fromCustomerId,'c1');
+ assert.equal(incident.toCustomerId,'c3');
+ assert.deepEqual(incident.attempts.map((a:any)=>a.status),['simulated']);
+ assert.equal(incident.deliveryEvidence,'demo_only_no_external_delivery');
+ assert.equal(r.list('draft').filter((d:any)=>d.itemId===item.id&&d.status==='queued').length,0);
+ assert.ok(r.history(item.id).some((e:any)=>e.kind==='recipient notification incident opened'));
+ assert.throws(()=>s.change(item.id,{state:'available',confirmed:true,reason:'Release early'}),/incident/);
+ assert.throws(()=>s.change(item.id,{customerId:'c2',confirmed:true,reason:'Another correction'}),/open recipient incident/);
+ assert.throws(()=>s.pickup(item.id,{check:'Photo ID checked'}),/incident/);
+ assert.throws(()=>s.reviewIncident(incident.id,{disposition:'demo_only_no_delivery',notes:''}),/notes/i);
+ assert.throws(()=>s.reviewIncident(incident.id,{disposition:'invalid',notes:'Reviewed'}),/disposition/);
+ const reviewed=s.reviewIncident(incident.id,{disposition:'demo_only_no_delivery',notes:'Only deterministic demo simulation, no provider connected'});
+ assert.equal(reviewed.status,'reviewed');
+ assert.equal(r.get('item',item.id).state,'exception');
+ assert.ok(r.history(item.id).some((e:any)=>e.kind==='recipient notification incident reviewed'));
+ assert.throws(()=>s.reviewIncident(incident.id,{disposition:'demo_only_no_delivery',notes:'Again'}),/already reviewed/);
+ assert.throws(()=>s.change(item.id,{state:'available',reason:'Missing reconfirmation'}),/reconfirmation/);
+ s.change(item.id,{state:'available',confirmed:true,reason:'New recipient explicitly verified with mailbox 103'});
+ const queued=r.list('draft').filter((d:any)=>d.itemId===item.id&&d.status==='queued');
+ assert.equal(queued.length,1);
+ assert.equal(queued[0].customerId,'c3');
+ assert.deepEqual(r.get('attempt',oldDraft.id),attempt,'Historical demo attempt remains immutable in meaning');
+ assert.deepEqual(s.send(oldDraft.id),attempt,'Replaying a historical attempt does not cause a new attempt');
+ assert.equal(r.list('attempt').filter((a:any)=>a.draftId===oldDraft.id).length,1);
+});
+
+test('failed demo attempts also create a recipient-correction incident without claiming delivery',()=>{
+ const {s,r}=setup();
+ const item=s.intake({...input,tracking:'INCIDENT-FAIL-01',customerId:'c7'});
+ const oldDraft=r.list('draft').find((d:any)=>d.itemId===item.id);
+ const attempt=s.send(oldDraft.id);
+ assert.equal(attempt.status,'failed');
+ s.change(item.id,{customerId:'c3',confirmed:true,reason:'Correct destination verified'});
+ const incident=r.list('incident').find((i:any)=>i.itemId===item.id);
+ assert.deepEqual(incident.attempts.map((a:any)=>a.status),['failed']);
+ assert.equal(incident.deliveryEvidence,'demo_only_no_external_delivery');
+ assert.equal(r.get('draft',oldDraft.id).status,'superseded');
+ assert.deepEqual(s.send(oldDraft.id),attempt);
+ assert.equal(s.reviewIncident(incident.id,{disposition:'demo_only_no_delivery',notes:'Failed local adapter, not delivered'}).status,'reviewed');
+});
+
+test('uncertain delivery evidence requires an escalated follow-up disposition',()=>{
+ const {s,r}=setup();
+ const item=s.intake({...input,tracking:'INCIDENT-UNKNOWN-01'});
+ const d=r.list('draft').find((draft:any)=>draft.itemId===item.id);
+ r.put('attempt',{id:d.id,draftId:d.id,status:'unknown',at:new Date().toISOString()});
+ r.put('draft',{...d,status:'unknown'});
+ s.change(item.id,{customerId:'c3',confirmed:true,reason:'Verified original recipient was incorrect'});
+ const incident=r.list('incident').find((i:any)=>i.itemId===item.id);
+ assert.equal(incident.deliveryEvidence,'unverified');
+ assert.throws(()=>s.reviewIncident(incident.id,{disposition:'demo_only_no_delivery',notes:'Assume no delivery'}),/uncertain/);
+ const reviewed=s.reviewIncident(incident.id,{disposition:'escalated_for_followup',notes:'Escalated to manager; external outcome remains unverified'});
+ assert.equal(reviewed.disposition,'escalated_for_followup');
+ assert.equal(r.get('item',item.id).state,'exception');
+ assert.equal(r.list('draft').filter((draft:any)=>draft.itemId===item.id&&draft.status==='queued').length,0);
+});
