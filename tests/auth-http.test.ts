@@ -93,6 +93,49 @@ test('named staff sessions protect API, enforce roles and attribute custody hist
   history=await (await get(manager,'history/'+item.id)).json();
   assert.ok(history.some((e:any)=>e.kind==='correction'&&e.staff.includes('Morgan Lee (staff-morgan)')));
   assert.ok(history.some((e:any)=>e.kind==='collected'&&e.staff.includes('Alex Rivera (staff-alex)')));
+  const problemIntake=await post(clerk,'intake',{
+   tracking:'INCIDENT-HTTP-01',carrier:'USPS',type:'package',location:'l1',
+   customerId:'c1',name:'Maria Garcia',confirmed:true,evidence:'Original mailbox verified'
+  });
+  assert.equal(problemIntake.status,200);
+  const problemItem=await problemIntake.json();
+  const current=await (await get(manager,'state')).json();
+  const outgoing=current.drafts.find((d:any)=>d.itemId===problemItem.id&&d.status==='queued');
+  assert.ok(outgoing);
+  const attemptResponse=await post(clerk,'send',{id:outgoing.id});
+  assert.equal(attemptResponse.status,200);
+  assert.equal((await attemptResponse.json()).status,'simulated');
+  const correctedResponse=await post(manager,'change',{
+   id:problemItem.id,customerId:'c3',confirmed:true,reason:'Manager verified wrong prior recipient'
+  });
+  assert.equal(correctedResponse.status,200);
+  assert.equal((await correctedResponse.json()).state,'exception');
+  const afterCorrection=await (await get(manager,'state')).json();
+  const incident=afterCorrection.incidents.find((i:any)=>i.itemId===problemItem.id);
+  assert.ok(incident);
+  assert.equal(incident.status,'open');
+  assert.equal(afterCorrection.drafts.filter((d:any)=>d.itemId===problemItem.id&&d.status==='queued').length,0);
+  const review={id:incident.id,disposition:'demo_only_no_delivery',notes:'Only simulated locally; no SMS or email'};
+  assert.equal((await post(clerk,'incident',review)).status,403);
+  assert.equal((await post(auditor,'incident',review)).status,403);
+  assert.equal((await post(manager,'incident',review,'bad-csrf')).status,403);
+  assert.equal((await post(manager,'incident',{...review,notes:''})).status,400);
+  assert.equal((await post(manager,'change',{id:problemItem.id,state:'available',confirmed:true,reason:'Premature release'})).status,400);
+  const approved=await post(manager,'incident',review);
+  assert.equal(approved.status,200);
+  assert.equal((await approved.json()).status,'reviewed');
+  assert.equal((await post(manager,'incident',review)).status,400);
+  assert.equal((await post(manager,'change',{id:problemItem.id,state:'available',reason:'No reconfirmation'})).status,400);
+  const released=await post(manager,'change',{
+    id:problemItem.id,state:'available',confirmed:true,reason:'Reverified mailbox 103 before release'
+  });
+  assert.equal(released.status,200);
+  assert.equal((await released.json()).state,'available');
+  const finalState=await (await get(manager,'state')).json();
+  assert.equal(finalState.drafts.filter((d:any)=>d.itemId===problemItem.id&&d.status==='queued'&&d.customerId==='c3').length,1);
+  const incidentHistory=await (await get(manager,'history/'+problemItem.id)).json();
+  assert.ok(incidentHistory.some((e:any)=>e.kind==='recipient notification incident opened'));
+  assert.ok(incidentHistory.some((e:any)=>e.kind==='recipient notification incident reviewed'&&e.staff.includes('Morgan Lee')));
   assert.equal((await post(clerk,'logout',{})).status,200);
   assert.equal((await get(clerk,'state')).status,401);
   assert.equal((await get(manager,'state')).status,200);
